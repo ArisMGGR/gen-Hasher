@@ -1,0 +1,11 @@
+# Maven build output: jars, test reports, jpackage staging and the installer
+target/
+
+# JVM crash logs (contain environment variables and local paths)
+hs_err_pid*.log
+replay_pid*.log
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
