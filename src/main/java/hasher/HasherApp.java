@@ -4,10 +4,10 @@ import com.formdev.flatlaf.FlatDarkLaf;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
-import javax.swing.text.DefaultEditorKit;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.ActionEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.NoSuchAlgorithmException;
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.prefs.Preferences;
 
-/** The Hasher window: type a string, press Hash, read and copy the digests. */
+/** The Hasher window: type a string, read and copy the digests as they update. */
 public final class HasherApp {
 
     private static final String PREF_CHECKED = "checked";
@@ -32,7 +32,7 @@ public final class HasherApp {
     /** Multi-line so pasted line breaks are hashed, not turned into spaces like a JTextField does. */
     private final JTextArea input = new JTextArea(3, 40);
     private final List<Row> rows = new ArrayList<>();
-    /** The text the results were computed from; null until the first Hash. */
+    /** The text the results were computed from; null while the text box is empty. */
     private String hashedText;
 
     public static void main(String[] args) {
@@ -45,17 +45,21 @@ public final class HasherApp {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setIconImages(loadIcons());
 
-        JButton hashButton = new JButton("Hash");
-        hashButton.addActionListener(e -> hashNow());
-        frame.getRootPane().setDefaultButton(hashButton); // Enter hashes from the other controls
-
-        // In the text box Enter hashes too, Shift+Enter starts a new line, Tab moves focus instead of typing a tab.
-        input.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "hash");
-        input.getInputMap().put(KeyStroke.getKeyStroke("shift ENTER"), DefaultEditorKit.insertBreakAction);
-        input.getActionMap().put("hash", new AbstractAction() {
+        // Hash as the text changes; Tab moves focus instead of typing a tab.
+        input.getDocument().addDocumentListener(new DocumentListener() {
             @Override
-            public void actionPerformed(ActionEvent e) {
+            public void insertUpdate(DocumentEvent e) {
                 hashNow();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                hashNow();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                // Attribute changes only; plain text has none.
             }
         });
         input.setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, null);
@@ -67,7 +71,6 @@ public final class HasherApp {
         JPanel top = new JPanel(new BorderLayout(8, 0));
         top.add(label, BorderLayout.WEST);
         top.add(new JScrollPane(input), BorderLayout.CENTER);
-        top.add(hashButton, BorderLayout.EAST);
 
         Set<String> checked = loadChecked();
         JPanel grid = new RowsPanel(new GridBagLayout());
@@ -115,9 +118,9 @@ public final class HasherApp {
     }
 
     private void hashNow() {
-        hashedText = input.getText();
+        String text = input.getText();
+        hashedText = text.isEmpty() ? null : text;
         rows.forEach(Row::refresh);
-        input.selectAll();
     }
 
     private Set<String> loadChecked() {

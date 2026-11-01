@@ -7,6 +7,14 @@ Set-Location $PSScriptRoot
 $version = ([xml](Get-Content pom.xml -Raw)).project.version
 if (-not $version) { throw 'No <version> in pom.xml' }
 
+# A running installer locks its .exe, and then `mvn clean` cannot delete target\.
+$installerDir = (Join-Path $PSScriptRoot 'target\installer') + '\'
+$running = Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($installerDir, 'OrdinalIgnoreCase') }
+if ($running) {
+    $list = ($running | ForEach-Object { "  $($_.ProcessName) (PID $($_.Id))" }) -join "`n"
+    throw "An installer from target\installer is still running, so it cannot be rebuilt:`n$list`nFinish or close that installer window (or end it in Task Manager), then try again."
+}
+
 mvn -B -ntp clean package
 if ($LASTEXITCODE) { throw 'Maven build failed' }
 
