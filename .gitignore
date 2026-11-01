@@ -1,9 +1,28 @@
 # Maven build output: jars, test reports, jpackage staging and the installer
 target/
 
+# Written to the project root by maven-shade-plugin if createDependencyReducedPom is turned back on
+dependency-reduced-pom.xml
+
 # JVM crash logs (contain environment variables and local paths)
 hs_err_pid*.log
 replay_pid*.log
+
+# Audit report, plus the fix log and verification report that refer to it
+tests/FINDINGS.md
+tests/LOG.md
+tests/VERIFY.md
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
 
 # Windows
 Thumbs.db

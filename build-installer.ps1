@@ -3,7 +3,9 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-$version = '1.0.0'
+# The app version comes from pom.xml, so there is one place to bump it.
+$version = ([xml](Get-Content pom.xml -Raw)).project.version
+if (-not $version) { throw 'No <version> in pom.xml' }
 
 mvn -B -ntp clean package
 if ($LASTEXITCODE) { throw 'Maven build failed' }

@@ -20,6 +20,12 @@ class HasherTest {
     }
 
     @Test
+    void nonAsciiTextIsHashedAsUtf8() throws Exception {
+        assertEquals("a3260bb658a2bce4e8e8b9cd613904a51582e107bd16c453b5530bd56be4937a",
+                Hasher.hash("héllo wörld €", "SHA-256"));
+    }
+
+    @Test
     void everyOfferedAlgorithmIsAvailable() throws Exception {
         for (String algo : Hasher.ALGORITHMS) {
             Hasher.hash("hello", algo);

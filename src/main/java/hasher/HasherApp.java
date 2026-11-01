@@ -4,8 +4,10 @@ import com.formdev.flatlaf.FlatDarkLaf;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.text.DefaultEditorKit;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.NoSuchAlgorithmException;
@@ -21,9 +23,14 @@ public final class HasherApp {
 
     private static final String PREF_CHECKED = "checked";
     private static final int[] ICON_SIZES = {16, 24, 32, 48, 64, 256};
+    /** The window may shrink to this width; the digest fields scroll instead. */
+    private static final int MIN_WIDTH = 640;
+    /** The window may shrink to this height; the digest rows scroll instead. */
+    private static final int MIN_HEIGHT = 300;
 
     private final Preferences prefs = Preferences.userNodeForPackage(HasherApp.class);
-    private final JTextField input = new JTextField(40);
+    /** Multi-line so pasted line breaks are hashed, not turned into spaces like a JTextField does. */
+    private final JTextArea input = new JTextArea(3, 40);
     private final List<Row> rows = new ArrayList<>();
     /** The text the results were computed from; null until the first Hash. */
     private String hashedText;
@@ -40,15 +47,30 @@ public final class HasherApp {
 
         JButton hashButton = new JButton("Hash");
         hashButton.addActionListener(e -> hashNow());
-        frame.getRootPane().setDefaultButton(hashButton); // Enter hashes
+        frame.getRootPane().setDefaultButton(hashButton); // Enter hashes from the other controls
 
+        // In the text box Enter hashes too, Shift+Enter starts a new line, Tab moves focus instead of typing a tab.
+        input.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "hash");
+        input.getInputMap().put(KeyStroke.getKeyStroke("shift ENTER"), DefaultEditorKit.insertBreakAction);
+        input.getActionMap().put("hash", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                hashNow();
+            }
+        });
+        input.setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, null);
+        input.setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, null);
+        input.setLineWrap(true);
+
+        JLabel label = new JLabel("Text");
+        label.setVerticalAlignment(SwingConstants.TOP);
         JPanel top = new JPanel(new BorderLayout(8, 0));
-        top.add(new JLabel("Text"), BorderLayout.WEST);
-        top.add(input, BorderLayout.CENTER);
+        top.add(label, BorderLayout.WEST);
+        top.add(new JScrollPane(input), BorderLayout.CENTER);
         top.add(hashButton, BorderLayout.EAST);
 
         Set<String> checked = loadChecked();
-        JPanel grid = new JPanel(new GridBagLayout());
+        JPanel grid = new RowsPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(3, 0, 3, 8);
         c.anchor = GridBagConstraints.WEST;
@@ -65,15 +87,28 @@ public final class HasherApp {
             grid.add(row.copy, c);
             c.insets.right = 8;
         }
+        // An empty last row takes any extra height, so the rows stay at the top of a taller window.
+        c.gridy = rows.size(); c.gridx = 0; c.weighty = 1;
+        c.insets = new Insets(0, 0, 0, 0);
+        grid.add(Box.createGlue(), c);
 
         JPanel content = new JPanel(new BorderLayout(0, 12));
         content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         content.add(top, BorderLayout.NORTH);
-        content.add(grid, BorderLayout.CENTER);
+        JScrollPane gridScroll = new JScrollPane(grid, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        gridScroll.setBorder(BorderFactory.createEmptyBorder());
+        gridScroll.getVerticalScrollBar().setUnitIncrement(16);
+        content.add(gridScroll, BorderLayout.CENTER);
 
         frame.setContentPane(content);
         frame.pack();
-        frame.setMinimumSize(frame.getSize());
+        // Fit narrow or scaled screens: below the packed width the digest fields shrink and scroll,
+        // below the packed height the rows scroll.
+        Rectangle screen = usableScreenBounds(frame.getGraphicsConfiguration());
+        Dimension fit = new Dimension(Math.min(frame.getWidth(), screen.width), Math.min(frame.getHeight(), screen.height));
+        frame.setMinimumSize(new Dimension(Math.min(fit.width, MIN_WIDTH), Math.min(fit.height, MIN_HEIGHT)));
+        frame.setSize(fit);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
         input.requestFocusInWindow();
@@ -108,9 +143,52 @@ public final class HasherApp {
         return icons;
     }
 
+    /** The screen's bounds minus the taskbar and other insets. */
+    private static Rectangle usableScreenBounds(GraphicsConfiguration gc) {
+        Rectangle bounds = gc.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        return new Rectangle(bounds.x + insets.left, bounds.y + insets.top,
+                bounds.width - insets.left - insets.right, bounds.height - insets.top - insets.bottom);
+    }
+
     private static Font monoFont() {
         Font consolas = new Font("Consolas", Font.PLAIN, 14);
         return consolas.getFamily().equals("Consolas") ? consolas : new Font(Font.MONOSPACED, Font.PLAIN, 13);
+    }
+
+    /** The digest rows: as wide as the scroll pane, so the fields shrink, and as tall as the rows need, so they scroll. */
+    private static final class RowsPanel extends JPanel implements Scrollable {
+        private static final long serialVersionUID = 1L;
+
+        RowsPanel(LayoutManager layout) {
+            super(layout);
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+            return orientation == SwingConstants.VERTICAL ? visible.height : visible.width;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            // Fill a viewport taller than the rows; scroll in a shorter one.
+            return getParent() instanceof JViewport v && v.getHeight() > getPreferredSize().height;
+        }
     }
 
     /** One algorithm: its checkbox, its digest and its Copy button. */
@@ -118,7 +196,7 @@ public final class HasherApp {
         final String algo;
         final JCheckBox box;
         final JTextField output = new JTextField(128); // wide enough for SHA-512
-        final JButton copy = new JButton("Copied");
+        final JButton copy = new JButton("Copy");
         private final Timer resetCopy = new Timer(1200, e -> copy.setText("Copy"));
 
         Row(String algo, boolean checked) {
@@ -132,14 +210,24 @@ public final class HasherApp {
             output.setEditable(false);
             output.setFont(monoFont());
 
-            // Size the button for "Copied" so the label swap doesn't shift the layout.
-            copy.setPreferredSize(copy.getPreferredSize());
+            // Size the button for its widest label so the label swaps don't shift the layout.
+            Dimension size = copy.getPreferredSize();
+            for (String label : new String[] {"Copied", "Failed"}) {
+                copy.setText(label);
+                size.width = Math.max(size.width, copy.getPreferredSize().width);
+            }
+            copy.setPreferredSize(size);
             copy.setText("Copy");
             resetCopy.setRepeats(false);
             copy.addActionListener(e -> {
-                Toolkit.getDefaultToolkit().getSystemClipboard()
-                        .setContents(new StringSelection(output.getText()), null);
-                copy.setText("Copied");
+                try {
+                    Toolkit.getDefaultToolkit().getSystemClipboard()
+                            .setContents(new StringSelection(output.getText()), null);
+                    copy.setText("Copied");
+                } catch (IllegalStateException ex) {
+                    // Another program has the clipboard open.
+                    copy.setText("Failed");
+                }
                 resetCopy.restart();
             });
             refresh();
